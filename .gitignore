@@ -1,0 +1,7 @@
+Abaikan folder instalasi Node.js
+
+node_modules
+
+Abaikan file environment rahasia
+
+.env
