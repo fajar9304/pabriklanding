@@ -10,12 +10,12 @@ const app = express();
 const PORT = process.env.PORT || 10000;
 
 // --- Konfigurasi Keamanan (CORS) ---
-// Tentukan domain frontend Anda yang diizinkan
+// Tentukan domain frontend Anda yang diizinkan (PERBAIKAN: Spasi rusak telah dihapus)
 const allowedOrigins = [
   process.env.FIREBASE_HOSTING_URL, // Variabel Lingkungan dari Render
   'https://pabriklanding.web.app', // Fallback
-  'http://localhost:5500',         // Untuk testing lokal
-  'http://127.0.0.1:5500'          // Untuk testing lokal
+  'http://localhost:5500', // Untuk testing lokal
+  'http://127.0.0.1:5500' // Untuk testing lokal
 ];
 
 const corsOptions = {
@@ -31,7 +31,7 @@ const corsOptions = {
 
 // --- Middleware ---
 app.use(cors(corsOptions)); // Terapkan aturan CORS
-app.use(express.json());   // Izinkan server membaca JSON dari body request
+app.use(express.json()); // Izinkan server membaca JSON dari body request
 
 // --- Inisialisasi Google Gemini AI ---
 if (!process.env.GEMINI_API_KEY) {
