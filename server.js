@@ -4,6 +4,11 @@ import cors from 'cors';
 import 'dotenv/config'; // Memuat variabel dari .env
 import { GoogleGenerativeAI } from '@google/generative-ai';
 
+// (BARU) Impor untuk Firebase Admin & Hosting
+import admin from 'firebase-admin'; 
+import { GoogleAuth } from 'google-auth-library';
+import crypto from 'crypto'; // Diperlukan untuk hashing file
+
 // --- Inisialisasi Aplikasi ---
 const app = express();
 const PORT = process.env.PORT || 10000;
@@ -41,7 +46,45 @@ console.log("Koneksi ke Gemini AI berhasil.");
 
 // --- Pengecekan Token Netlify ---
 if (!process.env.NETLIFY_ACCESS_TOKEN) {
-  console.warn("PERINGATAN: NETLIFY_ACCESS_TOKEN tidak ditemukan. Fitur 'Publikasikan' tidak akan berfungsi.");
+  console.warn("PERINGATAN: NETLIFY_ACCESS_TOKEN tidak ditemukan. Fitur 'Deploy Netlify' tidak akan berfungsi.");
+}
+
+// ==================================================
+// == (BARU) Inisialisasi Firebase Admin SDK ==
+// ==================================================
+let firebaseAuthClient; // Klien Auth untuk Google API
+if (process.env.FIREBASE_SERVICE_ACCOUNT_JSON) {
+  try {
+    const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT_JSON);
+    
+    // Inisialisasi SDK Admin standar (untuk Auth, Firestore, dll.)
+    admin.initializeApp({
+      credential: admin.credential.cert(serviceAccount)
+    });
+    
+    // Inisialisasi Klien Auth untuk memanggil Google REST API (termasuk Hosting API)
+    const auth = new GoogleAuth({
+        credentials: serviceAccount,
+        scopes: [
+            'https://www.googleapis.com/auth/cloud-platform',
+            'https://www.googleapis.com/auth/firebase'
+        ]
+    });
+    
+    // Simpan klien di variabel global agar bisa digunakan di endpoint
+    // Kita lakukan ini dalam promise agar server bisa lanjut inisialisasi
+    auth.getClient().then(client => {
+        firebaseAuthClient = client;
+        console.log("Koneksi ke Firebase Admin SDK (untuk Hosting) berhasil.");
+    }).catch(e => {
+        console.error("Gagal mendapatkan klien Auth Firebase:", e.message);
+    });
+
+  } catch (e) {
+    console.error("FATAL ERROR: Gagal mem-parsing FIREBASE_SERVICE_ACCOUNT_JSON.", e.message);
+  }
+} else {
+  console.warn("PERINGATAN: FIREBASE_SERVICE_ACCOUNT_JSON tidak ditemukan. Fitur 'Deploy Firebase' tidak akan berfungsi.");
 }
 
 
@@ -52,13 +95,12 @@ app.get('/', (req, res) => {
 });
 
 /**
- * Endpoint BARU untuk GENERATE Kode
- * Menerima 'brief' (data formulir) dari frontend.
+ * Endpoint untuk GENERATE Kode (Tidak Berubah)
  */
 app.post('/api/generate', async (req, res) => {
   console.log("Menerima permintaan ke /api/generate (V2)...");
   try {
-    const brief = req.body.brief; // Frontend hanya mengirim data formulir
+    const brief = req.body.brief; 
     if (!brief) {
       return res.status(400).json({ error: 'Brief (data formulir) tidak lengkap.' });
     }
@@ -75,9 +117,7 @@ Aturan Keras (Teknis):
 6. SELALU gunakan 'Link Tombol Aksi (CTA)' untuk SEMUA tombol call-to-action utama.
 7. **ATURAN V2.0 (PENTING):** Untuk *setiap* elemen HTML yang bermakna (div, h1, p, button, a, img, section), tambahkan atribut 'data-id' unik. Formatnya adalah \`data-id="lp-el-{uuid}"\`. Ganti {uuid} dengan 8 karakter acak (contoh: \`data-id="lp-el-a1b2c3d4"\`). Ini WAJIB untuk fitur editor visual.`;
 
-    // --- (PERBAIKAN) ---
-    // Menggunakan bracket notation (brief['product-name'])
-    // untuk membaca data dengan tanda hubung (-)
+    // --- (PERBAIKAN) Menggunakan bracket notation ---
     const userQuery = `
 ### Brief Klien ###
 * Nama Brand/Produk: ${brief['product-name']}
@@ -111,7 +151,7 @@ Hasilkan kode HTML lengkap dan tunggal. Jangan lupakan misi utama: buat halaman 
     const response = await result.response;
     const text = response.text();
 
-    // 4. Kirim kembali respons yang MIRIP dengan API Google
+    // 4. Kirim kembali respons
     console.log("Berhasil mendapat respons dari Gemini. Mengirim ke frontend...");
     res.status(200).json({
       candidates: [{
@@ -129,7 +169,7 @@ Hasilkan kode HTML lengkap dan tunggal. Jangan lupakan misi utama: buat halaman 
 
 
 /**
- * Endpoint BARU untuk EDIT Kode
+ * Endpoint untuk EDIT Kode (Tidak Berubah)
  */
 app.post('/api/edit', async (req, res) => {
   console.log("Menerima permintaan ke /api/edit (V2)...");
@@ -188,9 +228,7 @@ Hasilkan kode HTML yang telah diperbarui. Ingat, pertahankan semua atribut 'data
 
 
 /**
- * ==================================================
- * == (BARU) Endpoint untuk DEPLOY ke NETLIFY ==
- * ==================================================
+ * Endpoint untuk DEPLOY ke NETLIFY (Tidak Berubah)
  */
 app.post('/api/deploy', async (req, res) => {
   console.log("Menerima permintaan ke /api/deploy (V2)...");
@@ -259,7 +297,6 @@ app.post('/api/deploy', async (req, res) => {
     console.log(`Deploy berhasil! ID Deploy: ${deployData.id}`);
 
     // --- (PERBAIKAN 404/Race Condition) ---
-    // Gunakan 'deploy_ssl_url' (URL spesifik deploy) alih-alih 'siteUrl' (URL produksi)
     const liveUrl = deployData.deploy_ssl_url || siteUrl;
 
     // --- LANGKAH 3: Kirim URL kembali ke Frontend ---
@@ -270,7 +307,6 @@ app.post('/api/deploy', async (req, res) => {
 
   } catch (error) {
     console.error("Error selama proses /api/deploy:", error);
-    // (Opsional: Hapus situs yang gagal deploy agar tidak menumpuk)
     if (siteId) {
       console.log(`Mencoba menghapus situs ${siteId} yang gagal...`);
       await fetch(`https://api.netlify.com/api/v1/sites/${siteId}`, {
@@ -279,6 +315,157 @@ app.post('/api/deploy', async (req, res) => {
       });
     }
     res.status(500).json({ error: 'Terjadi kesalahan internal saat deploy.', details: error.message });
+  }
+});
+
+
+/**
+ * ==================================================
+ * == (BARU) Endpoint untuk DEPLOY ke FIREBASE ==
+ * ==================================================
+ */
+app.post('/api/deploy-firebase', async (req, res) => {
+  console.log("Menerima permintaan ke /api/deploy-firebase (V2)...");
+      
+  const { htmlContent, siteId } = req.body; // Frontend mengirim siteId unik
+  const projectId = 'pabriklanding'; // Project ID Firebase Anda
+  
+  if (!firebaseAuthClient) {
+      console.error("Error di /api/deploy-firebase: Firebase Admin SDK tidak terinisialisasi.");
+      return res.status(500).json({ error: "Server belum dikonfigurasi untuk deploy Firebase. Kunci Service Account tidak ada/valid." });
+  }
+  if (!htmlContent || !siteId) {
+      return res.status(400).json({ error: 'Payload (htmlContent atau siteId) tidak lengkap.' });
+  }
+
+  // Validasi Site ID (6-30 karakter, huruf kecil, angka, tanda hubung)
+  const siteIdRegex = /^[a-z0-9-]{6,30}$/;
+  if (!siteIdRegex.test(siteId)) {
+      return res.status(400).json({ 
+          error: `Site ID tidak valid: "${siteId}". Harus 6-30 karakter, hanya huruf kecil, angka, dan tanda hubung.` 
+      });
+  }
+  
+  console.log(`Memulai proses deploy Firebase untuk siteId: ${siteId}`);
+  
+  try {
+    // Dapatkan Access Token untuk memanggil Google API
+    const token = (await firebaseAuthClient.getAccessToken()).token;
+    const authHeader = { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' };
+    
+    const HOSTING_API_URL = 'https://firebasehosting.googleapis.com/v1beta1';
+
+    // --- LANGKAH 1: Buat Situs Baru di Firebase ---
+    // (Kita gunakan 'create' dengan siteId di query param)
+    console.log(`Langkah 1/5: Membuat situs Firebase: ${siteId}...`);
+    const createSiteResponse = await fetch(`${HOSTING_API_URL}/projects/${projectId}/sites?siteId=${siteId}`, {
+        method: 'POST',
+        headers: authHeader,
+        body: JSON.stringify({}) // Body kosong, siteId ada di query param
+    });
+
+    // 409 Conflict berarti situs sudah ada, itu tidak apa-apa, kita bisa lanjut deploy ke sana.
+    if (!createSiteResponse.ok && createSiteResponse.status !== 409) { 
+        const errorData = await createSiteResponse.json();
+        console.error("Gagal membuat situs Firebase:", errorData);
+        throw new Error(`Gagal membuat situs di Firebase: ${errorData.error.message}`);
+    }
+    
+    const siteData = await createSiteResponse.json();
+    // Jika status 409, siteData tidak berisi defaultUrl, jadi kita buat manual.
+    const siteUrl = siteData.defaultUrl || `https://${siteId}.web.app`;
+    console.log(`Langkah 1/5 Selesai. URL Situs: ${siteUrl}`);
+
+    // --- LANGKAH 2: Buat Versi Baru (Definisikan file) ---
+    console.log(`Langkah 2/5: Membuat versi baru untuk ${siteId}...`);
+    
+    // Kita perlu hash sha256 dari konten HTML
+    const hash = crypto.createHash('sha256').update(htmlContent).digest('hex');
+
+    const createVersionResponse = await fetch(`${HOSTING_API_URL}/projects/${projectId}/sites/${siteId}/versions`, {
+        method: 'POST',
+        headers: authHeader,
+        body: JSON.stringify({
+            config: {}, // Konfigurasi standar
+            files: {
+                '/index.html': { // Path file di server
+                    hash: hash, // Hash dari konten
+                    status: 'ACTIVE'
+                }
+            }
+        })
+    });
+
+    if (!createVersionResponse.ok) {
+        const errorData = await createVersionResponse.json();
+        console.error("Gagal membuat versi Firebase:", errorData);
+        throw new Error(`Gagal membuat versi di Firebase: ${errorData.error.message}`);
+    }
+    
+    const versionData = await createVersionResponse.json();
+    const versionId = versionData.name.split('/').pop(); // Ambil ID versi (misal: "1a2b3c")
+    const uploadUrl = versionData.uploadUrl; // URL unik untuk meng-upload file
+    console.log(`Langkah 2/5 Selesai. Versi: ${versionId}, URL Upload: ${uploadUrl}`);
+
+    // --- LANGKAH 3: Upload Konten (File index.html) ---
+    console.log(`Langkah 3/5: Meng-upload index.html ke ${uploadUrl}...`);
+    const uploadFileResponse = await fetch(`${uploadUrl}/${hash}`, {
+        method: 'POST',
+        headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/octet-stream', // Tipe konten khusus untuk upload ini
+            'Content-Length': Buffer.byteLength(htmlContent)
+        },
+        body: htmlContent // Kirim HTML mentah sebagai body
+    });
+
+    if (!uploadFileResponse.ok) {
+        // Respons error di sini mungkin bukan JSON
+        const errorText = await uploadFileResponse.text();
+        console.error("Gagal upload file ke Firebase:", errorText);
+        throw new Error(`Gagal upload file ke Firebase: ${errorText}`);
+    }
+    console.log(`Langkah 3/5 Selesai. File index.html ter-upload.`);
+    
+    // --- LANGKAH 4: Finalisasi Versi (Tandai Selesai Upload) ---
+    console.log(`Langkah 4/5: Memfinalisasi versi ${versionId}...`);
+    const finalizeResponse = await fetch(`${HOSTING_API_URL}/projects/${projectId}/sites/${siteId}/versions/${versionId}?update_mask=status`, {
+        method: 'PATCH',
+        headers: authHeader,
+        body: JSON.stringify({ status: 'FINALIZED' })
+    });
+    
+    if (!finalizeResponse.ok) {
+        const errorData = await finalizeResponse.json();
+        console.error("Gagal memfinalisasi versi Firebase:", errorData);
+        throw new Error(`Gagal memfinalisasi versi di Firebase: ${errorData.error.message}`);
+    }
+    console.log(`Langkah 4/5 Selesai. Versi ${versionId} difinalisasi.`);
+
+    // --- LANGKAH 5: Rilis Versi (Jadikan Live) ---
+    console.log(`Langkah 5/5: Merilis versi ${versionId} ke ${siteUrl}...`);
+    const releaseResponse = await fetch(`${HOSTING_API_URL}/projects/${projectId}/sites/${siteId}/releases?versionName=versions/${versionId}`, {
+        method: 'POST',
+        headers: authHeader
+    });
+    
+    if (!releaseResponse.ok) {
+        const errorData = await releaseResponse.json();
+        console.error("Gagal merilis versi Firebase:", errorData);
+        throw new Error(`Gagal merilis versi di Firebase: ${errorData.error.message}`);
+    }
+    
+    console.log(`Deploy Firebase ke ${siteUrl} BERHASIL!`);
+
+    // --- Kirim URL kembali ke Frontend ---
+    res.status(200).json({
+        message: 'Deploy Firebase berhasil!',
+        url: siteUrl // Mengirimkan URL .web.app
+    });
+    
+  } catch (error) {
+    console.error("Error selama proses /api/deploy-firebase:", error);
+    res.status(500).json({ error: 'Terjadi kesalahan internal saat deploy Firebase.', details: error.message });
   }
 });
 
