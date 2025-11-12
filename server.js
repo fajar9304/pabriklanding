@@ -39,6 +39,12 @@ const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash-preview-09-2025" });
 console.log("Koneksi ke Gemini AI berhasil.");
 
+// --- (BARU) Pengecekan Token Netlify ---
+if (!process.env.NETLIFY_ACCESS_TOKEN) {
+  console.warn("PERINGATAN: NETLIFY_ACCESS_TOKEN tidak ditemukan. Fitur 'Publikasikan' tidak akan berfungsi.");
+}
+
+
 // --- Routes (Endpoint) ---
 
 app.get('/', (req, res) => {
@@ -178,6 +184,97 @@ Hasilkan kode HTML yang telah diperbarui. Ingat, pertahankan semua atribut 'data
   } catch (error) {
     console.error("Error di /api/edit:", error);
     res.status(500).json({ error: 'Terjadi kesalahan internal pada server.', details: error.message });
+  }
+});
+
+
+/**
+ * ==================================================
+ * == (BARU) Endpoint untuk DEPLOY ke NETLIFY ==
+ * ==================================================
+ */
+app.post('/api/deploy', async (req, res) => {
+  console.log("Menerima permintaan ke /api/deploy (V2)...");
+  
+  const { htmlContent } = req.body;
+  const netlifyToken = process.env.NETLIFY_ACCESS_TOKEN;
+
+  if (!netlifyToken) {
+    console.error("Error di /api/deploy: NETLIFY_ACCESS_TOKEN tidak ditemukan.");
+    return res.status(500).json({ error: "Server belum dikonfigurasi untuk deploy. Token Netlify tidak ada." });
+  }
+
+  if (!htmlContent) {
+    return res.status(400).json({ error: 'Payload (htmlContent) tidak lengkap.' });
+  }
+
+  let siteId = null;
+
+  try {
+    // --- LANGKAH 1: Buat Situs Baru di Netlify ---
+    console.log("Menghubungi Netlify API untuk membuat situs baru...");
+    const createSiteResponse = await fetch('https://api.netlify.com/api/v1/sites', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${netlifyToken}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({}) // Membuat situs kosong standar
+    });
+
+    if (!createSiteResponse.ok) {
+      const errorData = await createSiteResponse.json();
+      console.error("Gagal membuat situs Netlify:", errorData);
+      throw new Error(`Gagal membuat situs di Netlify: ${errorData.message}`);
+    }
+
+    const siteData = await createSiteResponse.json();
+    siteId = siteData.site_id;
+    const siteUrl = siteData.ssl_url || siteData.url;
+    console.log(`Situs baru berhasil dibuat. Site ID: ${siteId}, URL: ${siteUrl}`);
+
+    // --- LANGKAH 2: Deploy Kode HTML ke Situs Baru ---
+    console.log(`Mendeploy index.html ke situs ${siteId}...`);
+    const deployResponse = await fetch(`https://api.netlify.com/api/v1/sites/${siteId}/deploys`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${netlifyToken}`,
+        'Content-Type': 'application/json'
+      },
+      // Mengirimkan file index.html
+      body: JSON.stringify({
+        files: {
+          'index.html': htmlContent
+        }
+      })
+    });
+
+    if (!deployResponse.ok) {
+      const errorData = await deployResponse.json();
+      console.error("Gagal deploy ke Netlify:", errorData);
+      throw new Error(`Gagal deploy kode ke Netlify: ${errorData.message}`);
+    }
+
+    const deployData = await deployResponse.json();
+    console.log(`Deploy berhasil! ID Deploy: ${deployData.id}`);
+
+    // --- LANGKAH 3: Kirim URL kembali ke Frontend ---
+    res.status(200).json({
+      message: 'Deploy berhasil!',
+      url: siteUrl // Mengirimkan URL situs yang sudah jadi
+    });
+
+  } catch (error) {
+    console.error("Error selama proses /api/deploy:", error);
+    // (Opsional: Hapus situs yang gagal deploy agar tidak menumpuk)
+    if (siteId) {
+      console.log(`Mencoba menghapus situs ${siteId} yang gagal...`);
+      await fetch(`https://api.netlify.com/api/v1/sites/${siteId}`, {
+        method: 'DELETE',
+        headers: { 'Authorization': `Bearer ${netlifyToken}` }
+      });
+    }
+    res.status(500).json({ error: 'Terjadi kesalahan internal saat deploy.', details: error.message });
   }
 });
 
