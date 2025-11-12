@@ -181,7 +181,8 @@ Hasilkan kode HTML yang telah diperbarui. Ingat, pertahankan semua atribut 'data
       }]
     });
 
-  } catch (error) {
+  } catch (error)
+ {
     console.error("Error di /api/edit:", error);
     res.status(500).json({ error: 'Terjadi kesalahan internal pada server.', details: error.message });
   }
@@ -258,10 +259,15 @@ app.post('/api/deploy', async (req, res) => {
     const deployData = await deployResponse.json();
     console.log(`Deploy berhasil! ID Deploy: ${deployData.id}`);
 
+    // --- (PERBAIKAN 404) ---
+    // Gunakan 'deploy_ssl_url' (URL spesifik deploy) alih-alih 'siteUrl' (URL produksi)
+    // Ini menyelesaikan masalah 'race condition' (Site not found)
+    const liveUrl = deployData.deploy_ssl_url || siteUrl;
+
     // --- LANGKAH 3: Kirim URL kembali ke Frontend ---
     res.status(200).json({
       message: 'Deploy berhasil!',
-      url: siteUrl // Mengirimkan URL situs yang sudah jadi
+      url: liveUrl // Mengirimkan URL yang dijamin aktif
     });
 
   } catch (error) {
