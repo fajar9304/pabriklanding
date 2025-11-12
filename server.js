@@ -39,7 +39,7 @@ const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash-preview-09-2025" });
 console.log("Koneksi ke Gemini AI berhasil.");
 
-// --- (BARU) Pengecekan Token Netlify ---
+// --- Pengecekan Token Netlify ---
 if (!process.env.NETLIFY_ACCESS_TOKEN) {
   console.warn("PERINGATAN: NETLIFY_ACCESS_TOKEN tidak ditemukan. Fitur 'Publikasikan' tidak akan berfungsi.");
 }
@@ -130,12 +130,10 @@ Hasilkan kode HTML lengkap dan tunggal. Jangan lupakan misi utama: buat halaman 
 
 /**
  * Endpoint BARU untuk EDIT Kode
- * (TIDAK PERLU DIUBAH)
  */
 app.post('/api/edit', async (req, res) => {
   console.log("Menerima permintaan ke /api/edit (V2)...");
   
-  // (CATATAN: Blok 'try' yang terduplikasi dari input Anda telah diperbaiki di sini)
   try {
     const { currentCode, editInstruction } = req.body;
 
@@ -220,7 +218,8 @@ app.post('/api/deploy', async (req, res) => {
         'Authorization': `Bearer ${netlifyToken}`,
         'Content-Type': 'application/json'
       },
-      body: JSON.stringify({}) // Membuat situs kosong standar
+      // (PERBAIKAN) Memberi tahu Netlify untuk membuat di dalam tim 'pabrik-landing'
+      body: JSON.stringify({ "account_slug": "pabrik-landing" }) 
     });
 
     if (!createSiteResponse.ok) {
@@ -259,9 +258,8 @@ app.post('/api/deploy', async (req, res) => {
     const deployData = await deployResponse.json();
     console.log(`Deploy berhasil! ID Deploy: ${deployData.id}`);
 
-    // --- (PERBAIKAN 404) ---
+    // --- (PERBAIKAN 404/Race Condition) ---
     // Gunakan 'deploy_ssl_url' (URL spesifik deploy) alih-alih 'siteUrl' (URL produksi)
-    // Ini menyelesaikan masalah 'race condition' (Site not found)
     const liveUrl = deployData.deploy_ssl_url || siteUrl;
 
     // --- LANGKAH 3: Kirim URL kembali ke Frontend ---
