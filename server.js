@@ -41,7 +41,8 @@ if (!process.env.GEMINI_API_KEY) {
   process.exit(1);
 }
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
-const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash-preview-09-2025" });
+// (MODIFIKASI) Kita tidak perlu model global lagi, karena prompt-nya dinamis
+// const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash-preview-09-2025" });
 console.log("Koneksi ke Gemini AI berhasil.");
 
 // --- Pengecekan Token Netlify ---
@@ -143,9 +144,16 @@ Hasilkan kode HTML lengkap dan tunggal. Jangan lupakan misi utama: buat halaman 
 
     // 3. Panggil Gemini API
     console.log("Memanggil Gemini API untuk /api/generate...");
-    const result = await model.generateContent({
-      contents: [{ parts: [{ text: userQuery }] }],
-      systemInstruction: { parts: [{ text: systemPrompt }] },
+    
+    // (PERBAIKAN) Inisialisasi model BARU di sini, dengan systemPrompt
+    const modelWithPrompt = genAI.getGenerativeModel({
+        model: "gemini-2.5-flash-preview-09-2025",
+        systemInstruction: { parts: [{ text: systemPrompt }] }
+    });
+
+    // (PERBAIKAN) Panggil generateContent HANYA dengan 'contents'
+    const result = await modelWithPrompt.generateContent({
+        contents: [{ parts: [{ text: userQuery }] }]
     });
 
     const response = await result.response;
@@ -201,9 +209,16 @@ Hasilkan kode HTML yang telah diperbarui. Ingat, pertahankan semua atribut 'data
 
     // 3. Panggil Gemini API
     console.log("Memanggil Gemini API untuk /api/edit...");
-    const result = await model.generateContent({
-      contents: [{ parts: [{ text: userQuery }] }],
-      systemInstruction: { parts: [{ text: systemPrompt }] },
+    
+    // (PERBAIKAN) Inisialisasi model BARU di sini, dengan systemPrompt
+    const modelWithPrompt = genAI.getGenerativeModel({
+        model: "gemini-2.5-flash-preview-09-2025",
+        systemInstruction: { parts: [{ text: systemPrompt }] }
+    });
+
+    // (PERBAIKAN) Panggil generateContent HANYA dengan 'contents'
+    const result = await modelWithPrompt.generateContent({
+        contents: [{ parts: [{ text: userQuery }] }]
     });
 
     const response = await result.response;
