@@ -401,11 +401,13 @@ app.post('/api/deploy-firebase', async (req, res) => {
         method: 'POST',
         headers: authHeader,
         body: JSON.stringify({
-            config: {}, // Konfigurasi standar
-            files: {
-                '/index.html': { // Path file di server
-                    hash: hash, // Hash dari konten
-                    status: 'ACTIVE'
+            /* (PERBAIKAN) Objek 'files' harus berada DI DALAM 'config' */
+            config: { 
+                files: {
+                    '/index.html': { // Path file di server
+                        hash: hash, // Hash dari konten
+                        status: 'ACTIVE'
+                    }
                 }
             }
         })
